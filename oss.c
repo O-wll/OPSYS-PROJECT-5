@@ -15,21 +15,24 @@
 
 void incrementClock(SimulatedClock *clock, int addSec, int addNano); // Clock increment
 void signalHandler(int sig);
+void help();
 
 PCB processTable[MAX_PCB]; // Process Table 
 
 int main(int argc, char **argv) {
 	int totalProcesses = 40;
-	int activeProcesses = 18;
+	int simul = 18;
 	int interval = 500;
 	int userInput = 0;
+	char *logFileName = NULL;
+	FILE *logFilePtr = NULL;
 
 	// User Input handler
-	while ((userInput = getopt(argc, argv, "n:s:t:i:f:h")) != -1) {
+	while ((userInput = getopt(argc, argv, "n:s:i:f:h")) != -1) {
 		switch(userInput) {
 			case 'n': // How many child processes to launch.
-				childProcess = atoi(optarg);
-				if (childProcess <= 0) {
+				totalProcesses = atoi(optarg);
+				if (totalProcesses <= 0) {
 					printf("Error: Total child processes must be at least one. \n");
 					exit(1);
 				}
@@ -44,7 +47,7 @@ int main(int argc, char **argv) {
 				break;
 			case 'i': // How often to launch child interval
 				interval = atoi(optarg);
-				if (childProcess <= 0) {
+				if (interval <= 0) {
 					printf("Error: interval must be positive. \n");
                                         exit(1);
                                 }
@@ -123,4 +126,8 @@ void signalHandler(int sig) { // Signal handler
        	}
 
 	exit(1);
+}
+
+void help() {
+	printf("Hi");
 }
