@@ -186,7 +186,12 @@ int main(int argc, char **argv) {
                 			processTable[pcbIndex].pid = childPid;
                 			processTable[pcbIndex].startSeconds = clock->seconds;
                 			processTable[pcbIndex].startNano = clock->nanoseconds;
-              				
+					
+					// Max resource claim
+					for (int j = 0; j < NUM_RESOURCES; j++) {
+					    	processTable[pcbIndex].maxResources[j] = rand() % (INSTANCES_PER_RESOURCE + 1);
+					}					
+
 					// Update variables for next loop			
 					activeProcesses++;
                 			launched++;
