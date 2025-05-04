@@ -151,6 +151,54 @@ int main(int argc, char **argv) {
 		int status; // For checking children that want to terminate.
 		pid_t pid = waitpid(-1, &status, WNOHANG);
 
+		static unsigned int lastDeadlockCheck = 0;
+
+		if (clock->seconds > lastDeadlockCheck) { // Dead lock detection.
+		    	lastDeadlockCheck = clock->seconds; // Last second stored
+
+			int deadlockFound = 0; // flag if deadlock detected
+		    	int victim = -1; // process that was deadlocked
+
+		    	for (int i = 0; i < MAX_PCB; i++) { // Search every process that is active and blocked.
+				if (processTable[i].occupied && processTable[i].blocked) {
+			    		int canBeGranted = 0;
+			    		for (int j = 0; j < NUM_RESOURCES; j++) { // Check if process can be granted resources
+						int need = processTable[j].maxResources[j] - processTable[j].resourceAllocated[j];
+						if (need > 0 && resourceTable[j].availableInstances >= need) {
+				    			canBeGranted = 1;
+				    			break;
+						}
+			    		}
+			    		if (!canBeGranted) { // If resource cannot be allocated, mark it as deadlocked.
+						deadlockFound = 1;
+						victim = i;
+						break; // just resolve one per second
+			    		}
+				}
+		    	}
+
+			if (deadlockFound && victim != -1) { // Dealing with deadlocked processes.
+				if (linesWritten < 10000) {
+					fprintf(file, "OSS: Deadlock detected at time %u:%u. Terminating P%d\n", clock->seconds, clock->nanoseconds, processTable[victim].pid);
+					linesWritten++;
+				}
+				for (int j = 0; j < NUM_RESOURCES; j++) {
+			    		int released = processTable[victim].resourceAllocated[j];
+			    		if (released > 0) { // Whatever resources that is held by deadlocked process, release.
+						resourceTable[j].availableInstances += released;
+						resourceTable[j].resourceAllocated[victim] = 0;
+						processTable[victim].resourceAllocated[j] = 0;
+			    		}
+				}
+
+				// Terminate process and reset its PCB>
+				kill(processTable[victim].pid, SIGTERM);
+				processTable[victim].occupied = 0;
+				processTable[victim].pid = -1;
+				processTable[victim].blocked = 0;
+		    	}
+		}
+
 		if (pid > 0) { // Check if child terminated.
 			for (int i = 0; i < MAX_PCB; i++) {
 				if (processTable[i].occupied && processTable[i].pid == pid) { // Free PCB index if free. 
