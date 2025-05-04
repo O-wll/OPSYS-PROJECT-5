@@ -163,7 +163,7 @@ int main(int argc, char **argv) {
 				if (processTable[i].occupied && processTable[i].blocked) {
 			    		int canBeGranted = 0;
 			    		for (int j = 0; j < NUM_RESOURCES; j++) { // Check if process can be granted resources
-						int need = processTable[j].maxResources[j] - processTable[j].resourceAllocated[j];
+						int need = processTable[i].maxResources[j] - processTable[i].resourceAllocated[j];
 						if (need > 0 && resourceTable[j].availableInstances >= need) {
 				    			canBeGranted = 1;
 				    			break;
@@ -191,7 +191,7 @@ int main(int argc, char **argv) {
 			    		}
 				}
 
-				// Terminate process and reset its PCB>
+				// Terminate process and reset its PCB.
 				kill(processTable[victim].pid, SIGTERM);
 				processTable[victim].occupied = 0;
 				processTable[victim].pid = -1;
@@ -440,6 +440,17 @@ void signalHandler(int sig) { // Signal handler
 		       	exit(1);
 	       	}
        	}
+	
+	// Cleanup resource descriptor
+	int shmResourceID = shmget(RESOURCE_KEY, sizeof(ResourceDesc) * NUM_RESOURCES, 0666);
+	if (shmResourceID != -1) {
+	    	ResourceDesc *resourceTable = (ResourceDesc *)shmat(shmResourceID, NULL, 0);
+	    	if (resourceTable != (void *)-1) {
+			shmdt(resourceTable);
+	    	}
+	    	shmctl(shmResourceID, IPC_RMID, NULL);
+	}
+
 
 	exit(1);
 }
