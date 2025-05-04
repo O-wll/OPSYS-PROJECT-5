@@ -201,19 +201,132 @@ int main(int argc, char **argv) {
 		}
 
 		OssMSG msg;
-		while (msgrcv(msgid, &msg, sizeof(OssMSG) - sizeof(long), 0, IPC_NOWAIT) > 0) {
-			if (msg.quantity > 0) {
-				if (linesWritten < 10000) {
-					fprintf(file, "OSS: Process %d requesting R%d x%d at time %u:%u\n", msg.pid, msg.resourceID, msg.quantity, clock->seconds, clock->nanoseconds);
-			       		linesWritten++;
+		while (msgrcv(msgid, &msg, sizeof(OssMSG) - sizeof(long), 0, IPC_NOWAIT) > 0) { // Get message from message queue
+			// Find an active PCB process
+			 int pcbIndex = -1;
+			 for (int i = 0; i < MAX_PCB; i++) {
+			 	 if (processTable[i].occupied && processTable[i].pid == msg.pid) {
+			     		 pcbIndex = i;
+			     		 break;
+			 	 }
+		     	 }
+
+			 if (pcbIndex == -1) { // If no pcb processes are found
+			 	continue;
+			 }
+
+			 int resourceID = msg.resourceID; // Get resource ID from worker.
+
+			if (msg.quantity > 0) { // Request resources
+				if (resourceTable[resourceID].availableInstances >= msg.quantity) { // Check if available instances for resource.
+			    		resourceTable[resourceID].availableInstances -= msg.quantity; // Granting resource request meaning reducing how much is available once granted.
+			    		resourceTable[resourceID].resourceAllocated[pcbIndex] += msg.quantity; // Update that pcbIndex is holding this resource
+			    		processTable[pcbIndex].resourceAllocated[resourceID] += msg.quantity; // Update PCB table for resource allocated
+
+					// Send message to worker
+					OssMSG response;
+			    		// Send message that tells worker that message was granted.		
+					response.mtype = msg.pid;
+					response.pid = msg.pid;
+			    		response.resourceID = resourceID;
+			    		response.quantity = msg.quantity; // Positive means granted
+			    		msgsnd(msgid, &response, sizeof(OssMSG) - sizeof(long), 0);
+
+					if (linesWritten < 10000) {
+						fprintf(file, "OSS: Process %d requesting R%d x%d at time %u:%u\n", msg.pid, msg.resourceID, msg.quantity, clock->seconds, clock->nanoseconds);
+						linesWritten++;
+					}
+				} else { // In case there's not enough resources to allocate.
+					
+					// Add process to wait queue and block it until resources are allocated.
+					int tail = resourceTable[resourceID].tail;
+			    		resourceTable[resourceID].requestQueue[tail] = pcbIndex;
+			    		resourceTable[resourceID].tail = (tail + 1) % MAX_PCB;
+			    		processTable[pcbIndex].blocked = 1;
+			    
+					if (linesWritten < 10000) {
+						fprintf(file, "OSS: P%d blocked for R%d at %u:%u\n", msg.pid, resourceID, clock->seconds, clock->nanoseconds);
+						linesWritten++;
+			    		}
 				}
-			} else {
+			} else { // Releasing Resources
+				resourceID = msg.resourceID;
+				pcbIndex = -1;
+
+				// Find active PCB process 
+				for (int i = 0; i < MAX_PCB; i++) {
+					if (processTable[i].occupied && processTable[i].pid == msg.pid) {
+				    		pcbIndex = i;
+				    		break;
+					}
+				}
+
+				if (pcbIndex == -1) { // If not, skip and continue while loop.
+					continue;
+				}
+				
+				// How much resources is process releasing
+				int amountReleased = processTable[pcbIndex].resourceAllocated[resourceID];
+
+				// Releasing resources.
+				resourceTable[resourceID].availableInstances += amountReleased;
+			    	resourceTable[resourceID].resourceAllocated[pcbIndex] = 0;
+			    	processTable[pcbIndex].resourceAllocated[resourceID] = 0;
+
 				if (linesWritten < 10000) {
 					fprintf(file, "OSS: Process %d releasing R%d at time %u:%u\n", msg.pid, msg.resourceID, clock->seconds, clock->nanoseconds);
 		    			linesWritten++;
 				}
+
+				// For process that are blocked that need the resource. 
+				
+				int head = resourceTable[resourceID].head;
+				int tail = resourceTable[resourceID].tail;
+				
+				while (head != tail) { // Run through every blocked process
+
+					int blockedIndex = resourceTable[resourceID].requestQueue[head];
+					
+					if (blockedIndex == -1) { // Check if resourceQueue is empty, if so, continue.
+						head = (head + 1) % MAX_PCB;
+						continue;
+					}
+					
+					// Determine how much resource the blocked process wants. 
+					int maxAllowed = processTable[blockedIndex].maxResources[resourceID];
+					int alreadyHeld = processTable[blockedIndex].resourceAllocated[resourceID];
+					int remainingRequest = maxAllowed - alreadyHeld;
+
+					if (resourceTable[resourceID].availableInstances >= remainingRequest && remainingRequest > 0) { // Grant request
+						// Allocating resources to process 
+						resourceTable[resourceID].availableInstances -= remainingRequest;
+						resourceTable[resourceID].resourceAllocated[blockedIndex] += remainingRequest;
+						processTable[blockedIndex].resourceAllocated[resourceID] += remainingRequest;
+						processTable[blockedIndex].blocked = 0;
+
+						// Send message indicating request granted
+						OssMSG response;
+						response.mtype = processTable[blockedIndex].pid;
+						response.pid = processTable[blockedIndex].pid;
+						response.resourceID = resourceID;
+						response.quantity = remainingRequest;
+						msgsnd(msgid, &response, sizeof(OssMSG) - sizeof(long), 0);
+				    
+						if (linesWritten < 10000) {
+							fprintf(file, "OSS: Unblocked P%d with R%d (%d units) at %u:%u\n", processTable[blockedIndex].pid, resourceID, remainingRequest, clock->seconds, clock->nanoseconds);						
+							linesWritten++;
+				    		}
+
+						resourceTable[resourceID].requestQueue[head] = -1; // Mark this queue slot as empty since request is granted 
+					}
+
+					head = (head + 1) % MAX_PCB; // Move forward to next blocked process 
+				}
+
+				resourceTable[resourceID].head = head; // Update queue head.
 			}
 		}
+		// Check if lines written in log file exceeds limit.
 		if (linesWritten >= 10000) {
 			fprintf(file, "OSS: Log limit of 10,000 lines reached.\n");
 			break;
