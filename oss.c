@@ -24,6 +24,10 @@ int main(int argc, char **argv) {
 	int simul = 18;
 	int interval = 500;
 	int userInput = 0;
+	int launched = 0;
+	int activeProcesses = 0;
+	int nextLaunchTime = 0;
+	int linesWritten = 0;
 	char *logFileName = "oss.log";
 
 	// User Input handler
@@ -75,6 +79,7 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
+	// SIMULATED CLOCK
 	int shmid = shmget(SHM_KEY, sizeof(SimulatedClock), IPC_CREAT | 0666); // Creating shared memory using shmget.
 	if (shmid == -1) { // If shmid is -1 as a result of shmget failing and returning -1, error message will print.
         	printf("Error: OSS shmget failed. \n");
@@ -87,6 +92,7 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
+	// RESOURCE TABLE
 	int shmResourceID = shmget(RESOURCE_KEY, sizeof(ResourceDesc) * NUM_RESOURCES, IPC_CREAT | 0666); // Creating shared memory using shmget.
 	if (shmResourceID == -1) { // Error message in case creating shm fails.
     		printf("OSS Error: Failed to allocate shared memory for resource table");
@@ -99,6 +105,7 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 	
+	// MESSAGE QUEUE
 	int msgid = msgget(MSG_KEY, IPC_CREAT | 0666); // Setting up msg queue.
         if (msgid == -1) {
                 printf("Error: OSS msgget failed. \n");
@@ -122,8 +129,9 @@ int main(int argc, char **argv) {
         		processTable[i].maxResources[j] = 0;
 		}
 	}
-
-	for (int i = 0; i < NUM_RESOURCES; i++) { // Resource table initialization 
+	
+	// Initialize Resource Table
+	for (int i = 0; i < NUM_RESOURCES; i++) {
 	     	resourceTable[i].totalInstances = INSTANCES_PER_RESOURCE;
 	     	resourceTable[i].availableInstances = INSTANCES_PER_RESOURCE;
 	    	resourceTable[i].head = 0;
@@ -133,6 +141,83 @@ int main(int argc, char **argv) {
 			resourceTable[i].resourceAllocated[j] = 0;
         		resourceTable[i].requestQueue[j] = -1; // -1 means empty slot in queue
 	       	}
+	}
+	
+	// Main loop
+	while (launched < totalProcesses || activeProcesses > 0) {
+		int randomNano = (rand() % 90001) + 10000;
+		incrementClock(clock, 0, randomNano);
+
+		int status; // For checking children that want to terminate.
+		pid_t pid = waitpid(-1, &status, WNOHANG);
+
+		if (pid > 0) { // Check if child terminated.
+			for (int i = 0; i < MAX_PCB; i++) {
+				if (processTable[i].occupied && processTable[i].pid == pid) { // Free PCB index if free. 
+			                processTable[i].occupied = 0;
+					activeProcesses--;
+					if (linesWritten < 10000) { // Write to log file
+						fprintf(file, "OSS: Child %d terminated at time %u:%u\n", pid, clock->seconds, clock->nanoseconds);
+						linesWritten++;
+						break;
+					}
+		    		}
+			}
+		}
+		// Launching child 
+		if (launched < totalProcesses && activeProcesses < simul && (clock->seconds * NANO_TO_SEC + clock->nanoseconds) >= nextLaunchTime) {
+			int pcbIndex = -1; // Index for PCB table
+			for (int i = 0; i < MAX_PCB; i++) { // Go through PCB table
+				if (!processTable[i].occupied) { // Find free slot
+					pcbIndex = i;
+					break;
+		    		}
+			}
+
+			if (pcbIndex != -1) { // For slot that is free
+				pid_t childPid = fork(); // Split to user processes
+				if (childPid == 0) { // Worker process
+					char pcbIndexStr[10];
+					snprintf(pcbIndexStr, sizeof(pcbIndexStr), "%d", pcbIndex); // Convert to string
+					execl("./worker", "./worker", pcbIndexStr, NULL);
+				} else { // Parent process
+					// Update PCB table
+					processTable[pcbIndex].occupied = 1;
+                			processTable[pcbIndex].pid = childPid;
+                			processTable[pcbIndex].startSeconds = clock->seconds;
+                			processTable[pcbIndex].startNano = clock->nanoseconds;
+              				
+					// Update variables for next loop			
+					activeProcesses++;
+                			launched++;
+                			
+					nextLaunchTime = clock->seconds * NANO_TO_SEC + clock->nanoseconds + (interval * 1000000); // Set up next user process launch
+                			if (linesWritten < 10000) {
+						fprintf(file, "OSS: Forked child %d at time %u:%u\n", childPid, clock->seconds, clock->nanoseconds);
+						linesWritten++;
+					}
+				}
+			}
+		}
+
+		OssMSG msg;
+		while (msgrcv(msgid, &msg, sizeof(OssMSG) - sizeof(long), 0, IPC_NOWAIT) > 0) {
+			if (msg.quantity > 0) {
+				if (linesWritten < 10000) {
+					fprintf(file, "OSS: Process %d requesting R%d x%d at time %u:%u\n", msg.pid, msg.resourceID, msg.quantity, clock->seconds, clock->nanoseconds);
+			       		linesWritten++;
+				}
+			} else {
+				if (linesWritten < 10000) {
+					fprintf(file, "OSS: Process %d releasing R%d at time %u:%u\n", msg.pid, msg.resourceID, clock->seconds, clock->nanoseconds);
+		    			linesWritten++;
+				}
+			}
+		}
+		if (linesWritten >= 10000) {
+			fprintf(file, "OSS: Log limit of 10,000 lines reached.\n");
+			break;
+	    	}
 	}
 
 	return 0;
