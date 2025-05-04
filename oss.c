@@ -24,8 +24,7 @@ int main(int argc, char **argv) {
 	int simul = 18;
 	int interval = 500;
 	int userInput = 0;
-	char *logFileName = NULL;
-	FILE *logFilePtr = NULL;
+	char *logFileName = "oss.log";
 
 	// User Input handler
 	while ((userInput = getopt(argc, argv, "n:s:i:f:h")) != -1) {
@@ -69,7 +68,73 @@ int main(int argc, char **argv) {
 	alarm(60);
 	signal(SIGINT, signalHandler);
 	signal(SIGALRM, signalHandler);
+
+	FILE *file = fopen(logFileName, "w");
+	if (!file) {
+		printf("Error: failed opening log file. \n");
+		exit(1);
+	}
+
+	int shmid = shmget(SHM_KEY, sizeof(SimulatedClock), IPC_CREAT | 0666); // Creating shared memory using shmget.
+	if (shmid == -1) { // If shmid is -1 as a result of shmget failing and returning -1, error message will print.
+        	printf("Error: OSS shmget failed. \n");
+        	exit(1);
+    	}
+
+	SimulatedClock *clock = (SimulatedClock *)shmat(shmid, NULL, 0); // Attach shared memory, clock is now a pointer to SimulatedClock structure.
+	if (clock == (void *)-1) { // if shmat, the attaching shared memory function, fails, it returns an invalid memory address.
+		printf("Error: OSS shared memory attachment failed. \n");
+		exit(1);
+	}
+
+	int shmResourceID = shmget(RESOURCE_KEY, sizeof(ResourceDesc) * NUM_RESOURCES, IPC_CREAT | 0666); // Creating shared memory using shmget.
+	if (shmResourceID == -1) { // Error message in case creating shm fails.
+    		printf("OSS Error: Failed to allocate shared memory for resource table");
+    		exit(1);
+	}
 	
+	ResourceDesc *resourceTable = (ResourceDesc *) shmat(shmResourceID, NULL, 0); // Attach shared memory, resourceTable is a pointer to ResourceDesc 
+	if (resourceTable == (void *) -1) { // Error message in case of attatch fail.
+    		printf("Error: OSS Failed to attach shared memory for resource table");
+		exit(1);
+	}
+	
+	int msgid = msgget(MSG_KEY, IPC_CREAT | 0666); // Setting up msg queue.
+        if (msgid == -1) {
+                printf("Error: OSS msgget failed. \n");
+                exit(1);
+        }
+
+	// Initialize clock.
+	clock->seconds = 0;
+	clock->nanoseconds = 0;
+
+	// Initialize PCB tables.
+	for (int i = 0; i < MAX_PCB; i++) {
+		processTable[i].occupied = 0;
+    		processTable[i].pid = -1;
+		processTable[i].startSeconds = 0;
+	        processTable[i].startNano = 0;
+		processTable[i].blocked = 0;
+
+    		for (int j = 0; j < NUM_RESOURCES; j++) { // Initialize resource arrays to 0.
+        		processTable[i].resourceAllocated[j] = 0;
+        		processTable[i].maxResources[j] = 0;
+		}
+	}
+
+	for (int i = 0; i < NUM_RESOURCES; i++) { // Resource table initialization 
+	     	resourceTable[i].totalInstances = INSTANCES_PER_RESOURCE;
+	     	resourceTable[i].availableInstances = INSTANCES_PER_RESOURCE;
+	    	resourceTable[i].head = 0;
+	    	resourceTable[i].tail = 0;
+	       
+		for (int j = 0; j < MAX_PCB; j++) {
+			resourceTable[i].resourceAllocated[j] = 0;
+        		resourceTable[i].requestQueue[j] = -1; // -1 means empty slot in queue
+	       	}
+	}
+
 	return 0;
 }
 
