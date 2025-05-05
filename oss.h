@@ -14,6 +14,9 @@
 #define NUM_RESOURCES 5
 #define INSTANCES_PER_RESOURCE 10
 
+// Author: Dat Nguyen
+// oss.h is a header file that holds our structures and some of our constant definitions, useful for cleanliness of oss.c
+
 // Using a structure for our simulated clock, storing seconds and nanoseconds.
 typedef struct SimulatedClock {
        unsigned int seconds;

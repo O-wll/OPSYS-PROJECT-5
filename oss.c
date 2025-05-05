@@ -13,6 +13,11 @@
 
 #define NANO_TO_SEC 1000000000
 
+// Author: Dat Nguyen
+// oss.c is the main function that is in charge of simulating a clock like previous projects, manage a PCB table for processes it'll fork, control the parameters, and most importantly, be in charge of allocating resources to child projects, ensuring that each child process gets the resources they request or put on as waiting list. Additionally, it has deadlocking detection and resolution, ensuring that processes that are blocked and cannot be granted resources gets terminated. 
+// Additionally, it also has a log (-v for more detailed log) on the actions oss is doing, it will be printed on screen as well.
+// To find out how to use this program, do ./oss -h
+
 void incrementClock(SimulatedClock *clock, int addSec, int addNano); // Clock increment
 void signalHandler(int sig);
 void help();
@@ -261,7 +266,7 @@ int main(int argc, char **argv) {
 			if (pcbIndex != -1) { // For slot that is free
 				pid_t childPid = fork(); // Split to user processes
 				if (childPid == 0) { // Worker process
-					execl("./worker", "./worker", NULL);
+					execl("./user", "./user", NULL);
 				} else { // Parent process
 					// Update PCB table
 					processTable[pcbIndex].occupied = 1;
@@ -480,6 +485,7 @@ int main(int argc, char **argv) {
 						printf("\n");
 						linesWritten++;
 					}
+				}
 			}
 			// Update last printed time.
 			lastPrintSec = clock->seconds;

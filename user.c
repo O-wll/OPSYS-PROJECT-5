@@ -10,8 +10,11 @@
 
 #define NANO_TO_SEC 1000000000
 #define BOUND 500000000 // 0.5 second bound to request/release
-#define REQUEST_PROBABILITY 70 // 70% chance to request, 30% to release
-#define TERMINATION_PROBABILITY 10
+#define REQUEST_PROBABILITY 80 // 80% chance to request, 30% to release
+#define TERMINATION_PROBABILITY 1
+
+// Author: Dat Nguyen
+// user.c is an exe called upon by oss.c during forking, it will either request resources or release them, each process of this is stored in a process table in oss.c. Then, at random, they will terminate.
 
 int main(int argc, char* argv[]) {
 	
