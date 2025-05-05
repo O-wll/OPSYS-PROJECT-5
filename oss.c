@@ -476,7 +476,7 @@ int main(int argc, char **argv) {
 	fprintf(file, "Total Deadlocked Processes Detected: %d\n", deadlockProcesses);
 	fprintf(file, "Processes Terminated due to Deadlock: %d\n", deadlockTerminations);
 	fprintf(file, "Processes Terminated Normally: %d\n", terminations);	
-	fprintf(file, "%% of Deadlocked Processes Terminated: %.2f%%\n", percentKilled);	
+	fprintf(file, "%% of Deadlocked Processes Terminated: %.2f%%\n", averageTerminations);	
 	
 	return 0;
 }
