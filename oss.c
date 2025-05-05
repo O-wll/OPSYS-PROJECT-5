@@ -40,6 +40,7 @@ int main(int argc, char **argv) {
 	int deadlockTerminations = 0;
 	int deadlockProcesses = 0;
 	int terminations = 0;
+	time_t startTime = time(NULL);
 
 	// User Input handler
 	while ((userInput = getopt(argc, argv, "n:s:i:f:hv")) != -1) {
@@ -57,6 +58,11 @@ int main(int argc, char **argv) {
 				if (simul < 0) {
 					printf("Error: Simulations must be positive. \n");
 					exit(1);
+				}
+
+				if (simul > 18) {
+					printf("Simulations CANNOT exceed 18 \n");
+					simul = 18;
 				}
 				break;
 			case 'i': // How often to launch child interval
@@ -161,6 +167,15 @@ int main(int argc, char **argv) {
 	while (launched < totalProcesses || activeProcesses > 0) {
 		int randomNano = (rand() % 90001) + 10000;
 		incrementClock(clock, 0, randomNano);
+		
+		if (difftime(time(NULL), startTime) >= 5) { // Track if 5 seconds in REAL TIME has passed.
+		    	printf("OSS: Real-time limit of 5 seconds reached. Terminating simulation.\n");
+		    	if (linesWritten < 10000 && verbose) {
+				fprintf(file, "OSS: Real-time limit of 5 seconds reached. Terminating simulation.\n");
+				linesWritten++;
+		    	}
+		    	break;
+		}
 
 		int status; // For checking children that want to terminate.
 		pid_t pid = waitpid(-1, &status, WNOHANG);
@@ -197,6 +212,7 @@ int main(int argc, char **argv) {
 			if (deadlockFound && victim != -1) { // Dealing with deadlocked processes.
 				if (linesWritten < 10000) {
 					fprintf(file, "OSS: Deadlock detected at time %u:%u. Terminating P%d\n", clock->seconds, clock->nanoseconds, processTable[victim].pid);
+					printf("OSS: Deadlock detected at time %u:%u. Terminating P%d\n", clock->seconds, clock->nanoseconds, processTable[victim].pid);
 					linesWritten++;
 				}
 				for (int j = 0; j < NUM_RESOURCES; j++) {
@@ -224,7 +240,7 @@ int main(int argc, char **argv) {
 					activeProcesses--;
 					terminations++;
 					if (linesWritten < 10000 && verbose) { // Write to log file
-						fprintf(file, "OSS: Child %d terminated at time %u:%u\n", pid, clock->seconds, clock->nanoseconds);
+						fprintf(file, "OSS: Child %d terminated at time %u:%u\n", pid, clock->seconds, clock->nanoseconds);						                                             printf("OSS: Child %d terminated at time %u:%u\n", pid, clock->seconds, clock->nanoseconds);
 						linesWritten++;
 						break;
 					}
@@ -267,6 +283,7 @@ int main(int argc, char **argv) {
 					nextLaunchTime = clock->seconds * NANO_TO_SEC + clock->nanoseconds + (interval * 1000000); // Set up next user process launch
                 			if (linesWritten < 10000 && verbose) {
 						fprintf(file, "OSS: Forked child %d at time %u:%u\n", childPid, clock->seconds, clock->nanoseconds);
+						printf("OSS: Forked child %d at time %u:%u\n", childPid, clock->seconds, clock->nanoseconds);
 						linesWritten++;
 					}
 				}
@@ -313,7 +330,8 @@ int main(int argc, char **argv) {
 
 					if (grantsCount >= 20 && linesWritten < 10000) { // Print resource allocation to PCB every 20 granted requests.
 					    	fprintf(file, "OSS: Allocation Table after 20 Grants at %u:%u\n", clock->seconds, clock->nanoseconds);
-					    	linesWritten++;
+						printf("OSS: Allocation Table after 20 Grants at %u:%u\n", clock->seconds, clock->nanoseconds);
+						linesWritten++;
 					    	
 						for (int i = 0; i < MAX_PCB; i++) { // Printing PCB index
 							if (processTable[i].occupied) {
@@ -330,6 +348,7 @@ int main(int argc, char **argv) {
 
 					if (linesWritten < 10000 && verbose) {
 						fprintf(file, "OSS: Process %d requesting R%d x%d at time %u:%u\n", msg.pid, msg.resourceID, msg.quantity, clock->seconds, clock->nanoseconds);
+                                                printf("OSS: Process %d requesting R%d x%d at time %u:%u\n", msg.pid, msg.resourceID, msg.quantity, clock->seconds, clock->nanoseconds);
 						linesWritten++;
 					}
 				} else { // In case there's not enough resources to allocate.
@@ -340,9 +359,8 @@ int main(int argc, char **argv) {
 			    		resourceTable[resourceID].tail = (tail + 1) % MAX_PCB;
 			    		processTable[pcbIndex].blocked = 1;
 
-					grantedAfterWait++; // Update for requests that will be granted after being blocked.
 					if (linesWritten < 10000 && verbose) {
-						fprintf(file, "OSS: P%d blocked for R%d at %u:%u\n", msg.pid, resourceID, clock->seconds, clock->nanoseconds);
+						fprintf(file, "OSS: P%d blocked for R%d at %u:%u\n", msg.pid, resourceID, clock->seconds, clock->nanoseconds);						                                     printf("OSS: P%d blocked for R%d at %u:%u\n", msg.pid, resourceID, clock->seconds, clock->nanoseconds);
 						linesWritten++;
 			    		}
 				}
@@ -372,7 +390,8 @@ int main(int argc, char **argv) {
 
 				if (linesWritten < 10000 && verbose) {
 					fprintf(file, "OSS: Process %d releasing R%d at time %u:%u\n", msg.pid, msg.resourceID, clock->seconds, clock->nanoseconds);
-		    			linesWritten++;
+					printf("OSS: Process %d releasing R%d at time %u:%u\n", msg.pid, msg.resourceID, clock->seconds, clock->nanoseconds);
+					linesWritten++;
 				}
 
 				// For process that are blocked that need the resource. 
@@ -409,8 +428,11 @@ int main(int argc, char **argv) {
 						response.quantity = remainingRequest;
 						msgsnd(msgid, &response, sizeof(OssMSG) - sizeof(long), 0);
 				    
+						grantedAfterWait++; // Update for requests that will be granted after being blocked.
+
 						if (linesWritten < 10000 && verbose) {
-							fprintf(file, "OSS: Unblocked P%d with R%d (%d units) at %u:%u\n", processTable[blockedIndex].pid, resourceID, remainingRequest, clock->seconds, clock->nanoseconds);						
+							fprintf(file, "OSS: Unblocked P%d with R%d (%d units) at %u:%u\n", processTable[blockedIndex].pid, resourceID, remainingRequest, clock->seconds, clock->nanoseconds);
+                                                        printf("OSS: Unblocked P%d with R%d (%d units) at %u:%u\n", processTable[blockedIndex].pid, resourceID, remainingRequest, clock->seconds, clock->nanoseconds);
 							linesWritten++;
 				    		}
 
@@ -429,24 +451,35 @@ int main(int argc, char **argv) {
 		       	if (linesWritten < 10000) {
 				// Print header for resource and pcb table	
 				fprintf(file, "OSS: Resource and Process Table at %u:%u\n", clock->seconds, clock->nanoseconds);
+				printf("OSS: Resource and Process Table at %u:%u\n", clock->seconds, clock->nanoseconds);
 				linesWritten++;
 
 				// Resource Table
 				fprintf(file, "Available Resources:\n");
+				printf("Available Resources:\n");
+
 				for (int i = 0; i < NUM_RESOURCES; i++) {
-			    		fprintf(file, "R%d: %d/%d\n", i, resourceTable[i].availableInstances, resourceTable[i].totalInstances);
+			    		fprintf(file, "R%d: %d/%d\n", i, resourceTable[i].availableInstances, resourceTable[i].totalInstances);					           
+	       				printf("R%d: %d/%d\n", i, resourceTable[i].availableInstances, resourceTable[i].totalInstances);
 			    		linesWritten++;
 				}
 				
 				// Process Table 
 				fprintf(file, "Process Table:\n");
+				printf("Process Table:\n");
+
 				for (int i = 0; i < MAX_PCB; i++) {
 					if (processTable[i].occupied) {
-						fprintf(file, "P:%d ", processTable[i].pid);
+						fprintf(file, "P:%d ", processTable[i].pid);						                                   
+				   		printf("P:%d ", processTable[i].pid);
+						
 						for (int j = 0; j < NUM_RESOURCES; j++) {
 							fprintf(file, "R%d=%d ", j, processTable[i].resourceAllocated[j]);
+							printf("R%d=%d ", j, processTable[i].resourceAllocated[j]);
 						}
-						fprintf(file, "\n");
+
+						fprintf(file, "\n");						                                             
+						printf("\n");
 						linesWritten++;
 					}
 				}
@@ -458,16 +491,17 @@ int main(int argc, char **argv) {
 		// Check if lines written in log file exceeds limit.
 		if (linesWritten >= 10000) {
 			fprintf(file, "OSS: Log limit of 10,000 lines reached.\n");
+			printf("OSS: Log limit of 10,000 lines reached.\n");
 			break;
 	    	}
 	}
 
-	double averageTermination = 0.0;
+	double averageTerminations = 0.0;
 	if (deadlockProcesses > 0) {
-		averageTermination = ((double) deadlockTerminations / deadlockProcesses) * 100;
+		averageTerminations = ((double) deadlockTerminations / deadlockProcesses) * 100;
 	}
 
-	// Print statistics
+	// Log statistics statistics
 	fprintf(file, "\nSIMULATION SUMMARY\n");
 	fprintf(file, "Total Requests: %d\n", totalRequests);
 	fprintf(file, "Granted Instantly: %d\n", grantedInstantly);
@@ -478,6 +512,17 @@ int main(int argc, char **argv) {
 	fprintf(file, "Processes Terminated Normally: %d\n", terminations);	
 	fprintf(file, "%% of Deadlocked Processes Terminated: %.2f%%\n", averageTerminations);	
 	
+	// Print statistics
+        printf("\nSIMULATION SUMMARY\n");
+        printf("Total Requests: %d\n", totalRequests);
+        printf("Granted Instantly: %d\n", grantedInstantly);
+        printf("Granted After Wait: %d\n", grantedAfterWait);
+        printf("Deadlock Detection Runs: %d\n", deadlockDetectedRun);
+        printf("Total Deadlocked Processes Detected: %d\n", deadlockProcesses);
+        printf("Processes Terminated due to Deadlock: %d\n", deadlockTerminations);
+        printf("Processes Terminated Normally: %d\n", terminations);
+        printf("%% of Deadlocked Processes Terminated: %.2f%%\n", averageTerminations);
+
 	return 0;
 }
 
