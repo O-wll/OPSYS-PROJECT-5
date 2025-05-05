@@ -50,17 +50,18 @@ int main(int argc, char* argv[]) {
     	// Local resource tracking
     	int resourceHeld[NUM_RESOURCES] = {0};
 
-	srand(getpid());
+	srand(getpid()); // Randomizer for each child
+	// Start time for resource allocation
     	unsigned int lastCheck = clock->seconds * NANO_TO_SEC + clock->nanoseconds;
     	unsigned int startTime = lastCheck;
 	
-       	while (1) {
+       	while (1) { // Main loop
 	       	unsigned int currentTime = clock->seconds * NANO_TO_SEC + clock->nanoseconds;
 		if ((currentTime - startTime) >= NANO_TO_SEC) { // Run at least 1 second
-	    		int terminateCheck = rand() % 100;
+	    		int terminateCheck = rand() % 100; // Roll for termination
 	    		if (terminateCheck < TERMINATION_PROBABILITY) { // 10% chance to terminate
 				for (int i = 0; i < NUM_RESOURCES; i++) {
-		    			if (resourceHeld[i] > 0) {
+		    			if (resourceHeld[i] > 0) { // Send message to OSS indicating termination
 						OssMSG releaseMsg;
 						releaseMsg.mtype = 1;
 						releaseMsg.pid = getpid();
@@ -69,18 +70,19 @@ int main(int argc, char* argv[]) {
 						msgsnd(msgid, &releaseMsg, sizeof(OssMSG) - sizeof(long), 0);
 		    			}
 				}
-				break;
+				break; // Terminate
 	    		}
 		}
 		
-		if ((currentTime - lastCheck) >= BOUND) {
+		if ((currentTime - lastCheck) >= BOUND) { // Request / Release
 	    		lastCheck = currentTime;
-	    
+	    		
+			// Update action to determine if we request OR release
 			int action = rand() % 100;
 	    		int resourceID = rand() % NUM_RESOURCES;
 	    
-			if (action < REQUEST_PROBABILITY) {
-				if (resourceHeld[resourceID] == 0) {
+			if (action < REQUEST_PROBABILITY) {  // Request
+				if (resourceHeld[resourceID] == 0) { // Send message to oss requesting resources
 		    			OssMSG request;
 		    			request.mtype = 1;
 		    			request.pid = getpid();
@@ -88,14 +90,14 @@ int main(int argc, char* argv[]) {
 		    			request.quantity = 1;
 		    			msgsnd(msgid, &request, sizeof(OssMSG) - sizeof(long), 0);
 		    
-					OssMSG response;
+					OssMSG response; // Get response from OSS.
 		    			msgrcv(msgid, &response, sizeof(OssMSG) - sizeof(long), getpid(), 0);
-		    			if (response.quantity > 0) {
+		    			if (response.quantity > 0) { // IF successful, update resources held
 						resourceHeld[resourceID] += response.quantity;
 		    			}
 				}
-	    		} else {
-				if (resourceHeld[resourceID] > 0) {
+	    		} else { // Release
+				if (resourceHeld[resourceID] > 0) { // Send message to OSS releasing resources
 		    			OssMSG release;
 		    			release.mtype = 1;
 		    			release.pid = getpid();
@@ -108,6 +110,7 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	// Detach resources
 	shmdt(clock);
 	shmdt(resourceTable);
 

@@ -261,9 +261,7 @@ int main(int argc, char **argv) {
 			if (pcbIndex != -1) { // For slot that is free
 				pid_t childPid = fork(); // Split to user processes
 				if (childPid == 0) { // Worker process
-					char pcbIndexStr[10];
-					snprintf(pcbIndexStr, sizeof(pcbIndexStr), "%d", pcbIndex); // Convert to string
-					execl("./worker", "./worker", pcbIndexStr, NULL);
+					execl("./worker", "./worker", NULL);
 				} else { // Parent process
 					// Update PCB table
 					processTable[pcbIndex].occupied = 1;
@@ -482,7 +480,6 @@ int main(int argc, char **argv) {
 						printf("\n");
 						linesWritten++;
 					}
-				}
 			}
 			// Update last printed time.
 			lastPrintSec = clock->seconds;
@@ -522,6 +519,37 @@ int main(int argc, char **argv) {
         printf("Processes Terminated due to Deadlock: %d\n", deadlockTerminations);
         printf("Processes Terminated Normally: %d\n", terminations);
         printf("%% of Deadlocked Processes Terminated: %.2f%%\n", averageTerminations);
+
+	// Detach shared memory
+    	if (shmdt(clock) == -1) {
+        	printf("Error: OSS Shared memory detachment failed \n");
+		exit(1);
+    	}
+	
+	// Detach shared memory for resource table
+	if (shmdt(resourceTable) == -1) {
+                printf("Error: OSS Shared memory detachment failed \n");
+                exit(1);
+        }
+
+
+    	// Remove shared memory
+    	if (shmctl(shmid, IPC_RMID, NULL) == -1) {
+        	printf("Error: Removing memory failed \n");
+		exit(1);
+    	}
+
+	// Remove shared memory for resource table
+	if (shmctl(shmResourceID, IPC_RMID, NULL) == -1) {
+                printf("Error: Removing memory failed \n");
+                exit(1);
+        }
+
+	// Remove message queue
+	if (msgctl(msgid, IPC_RMID, NULL) == -1) {
+		printf("Error: Removing msg queue failed. \n");
+		exit(1);
+	}
 
 	return 0;
 }
@@ -593,5 +621,12 @@ void signalHandler(int sig) { // Signal handler
 }
 
 void help() {
-	printf("Hi");
+	printf("Usage: ./oss [-h] [-n proc] [-s simul] [-i interval] [-f logfile] [-v]\n");
+    	printf("Options:\n");
+    	printf("-h 	      Show this help message and exit.\n");
+    	printf("-n proc       Total number of user processes to launch (default: 40).\n");
+    	printf("-s simul      Maximum number of simultaneous processes (max: 18).\n");
+    	printf("-i interval   Time interval (ms) between process launches (default: 500).\n");
+	printf("-f logfile    Name of the log file to write output (default: oss.log).\n");
+    	printf("-v            Enable verbose output to both screen and file.\n");
 }
